@@ -4,25 +4,47 @@ import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
 
 const MAX_READ_BYTES = 200_000;
+const MAX_LIMIT = 1_000_000;
 
 export function registerFsTools(server: McpServer, opts?: { cwd?: string }): void {
-  const base = (opts?.cwd ?? process.cwd());
+  const base = opts?.cwd ?? process.cwd();
   const abs = (path: string) => resolve(base, path);
   server.tool(
     'read_file',
-    'Read the contents of a file at the given path.',
-    { path: z.string().describe('Absolute or relative path to the file') },
-    async ({ path }) => {
+    'Read the contents of a file at the given path. Supports paged reads via character `offset`/`limit`.',
+    {
+      path: z.string().describe('Absolute or relative path to the file'),
+      offset: z
+        .coerce.number()
+        .int()
+        .nonnegative()
+        .optional()
+        .describe('Character index to start reading from (default 0).'),
+      limit: z
+        .coerce.number()
+        .int()
+        .positive()
+        .max(MAX_LIMIT)
+        .optional()
+        .describe(
+          `Maximum number of characters to return. If omitted, capped at ${MAX_READ_BYTES} (safety).`,
+        ),
+    },
+    async ({ path, offset = 0, limit }) => {
       const full = abs(path);
       const stats = await stat(full);
       const content = await readFile(full, 'utf8');
-      const text =
-        content.length > MAX_READ_BYTES
-          ? `${content.slice(0, MAX_READ_BYTES)}\n...[truncated, file is ${stats.size} bytes]`
-          : content;
+      const total = content.length;
+      const start = Math.min(offset, total);
+      const end = Math.min(start + (limit ?? MAX_READ_BYTES), total);
+      const text = content.slice(start, end);
+      const truncated = end < total;
       return {
         content: [
-          { type: 'text', text: `path: ${full}\nsize: ${stats.size} bytes\n\n${text}` },
+          {
+            type: 'text',
+            text: `path: ${full}\nsize: ${stats.size} bytes\noffset: ${start}\nreturned_chars: ${text.length}\ntotal_chars: ${total}\ntruncated: ${truncated}\n\n${text}`,
+          },
         ],
       };
     },

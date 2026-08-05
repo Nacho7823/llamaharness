@@ -74,6 +74,21 @@ try {
   const lsn = await client.callTool({ name: 'list_notes', arguments: {} });
   assert(Array.isArray(JSON.parse(lsn.content[0].text)) && JSON.parse(lsn.content[0].text).includes('demo'), 'list_notes incluye demo');
 
+  // read_file con offset/limit (paginado en caracteres)
+  const big = 'A'.repeat(300);
+  await client.callTool({ name: 'write_file', arguments: { path: '/tmp/_e2e_readfile.txt', content: big } });
+  const paged = await client.callTool({ name: 'read_file', arguments: { path: '/tmp/_e2e_readfile.txt', limit: 50 } });
+  {
+    const m = paged.content[0].text.match(/returned_chars: (\d+).*?total_chars: (\d+).*?truncated: (true|false)/s);
+    assert(m && Number(m[1]) === 50 && Number(m[2]) === 300 && m[3] === 'true', 'read_file limit=50 -> returned_chars=50, total=300, truncated=true');
+  }
+  const slice = await client.callTool({ name: 'read_file', arguments: { path: '/tmp/_e2e_readfile.txt', offset: 260, limit: 50 } });
+  {
+    const m = slice.content[0].text.match(/returned_chars: (\d+).*?truncated: (true|false)/s);
+    assert(m && Number(m[1]) === 40 && m[2] === 'false', 'read_file offset=260 limit=50 -> returned_chars=40, truncated=false');
+  }
+  await client.callTool({ name: 'run_bash', arguments: { command: 'rm -f /tmp/_e2e_readfile.txt' } });
+
   await client.close();
   ok('cierre limpio');
 

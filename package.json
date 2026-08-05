@@ -1,0 +1,29 @@
+{
+  "name": "llamaharness",
+  "version": "0.1.0",
+  "description": "Basic agent harness exposed as an MCP server (bash, fs, notes)",
+  "type": "module",
+  "bin": {
+    "llamaharness": "dist/llamaharness.js"
+  },
+  "main": "dist/llamaharness.js",
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "dev": "tsx llamaharness.ts",
+    "start": "node dist/llamaharness.js",
+    "build": "tsc",
+    "typecheck": "tsc --noEmit",
+    "prepare": "npm run build"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.30.0",
+    "zod": "^3.24.1"
+  },
+  "devDependencies": {
+    "@types/node": "^26.1.2",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.2"
+  }
+}

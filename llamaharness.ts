@@ -1,10 +1,4 @@
 #!/usr/bin/env node
-// Este import DEBE ir primero: define globalThis.crypto antes de que el SDK se
-// evalúe (ver crypto_polyfill.ts), necesario para el transporte streamable-http
-// en Node.js 18.
-import './crypto_polyfill.js';
-
-import { randomUUID } from 'node:crypto';
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
 import { z } from 'zod';
 
@@ -26,7 +20,7 @@ interface CliArgs {
 }
 
 function parseArgs(argv: string[]): CliArgs {
-  const args: CliArgs = { transport: 'stdio', host: '0.0.0.0', port: 8000 };
+  const args: CliArgs = { transport: 'http', host: '0.0.0.0', port: 9908 };
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i];
     switch (arg) {
@@ -57,6 +51,19 @@ function parseArgs(argv: string[]): CliArgs {
 
 // Simple in-memory store for the notepad tools
 const notes = new Map<string, string>();
+
+// Working directory estrictamente igual a la carpeta desde donde se lanza el
+// comando. Se ancla explícitamente para que todas las tools (bash, fs) operen
+// contra este directorio y no dependan de cambios de cwd posteriores.
+const WORK_DIR = process.cwd();
+
+function buildServer(): McpServer {
+  const server = new McpServer({ name: SERVER_NAME, version: SERVER_VERSION });
+  registerBashTools(server, { cwd: WORK_DIR });
+  registerFsTools(server, { cwd: WORK_DIR });
+  registerNotesTools(server);
+  return server;
+}
 
 function registerNotesTools(server: McpServer): void {
   server.tool(
@@ -89,14 +96,6 @@ function registerNotesTools(server: McpServer): void {
   }));
 }
 
-function buildServer(): McpServer {
-  const server = new McpServer({ name: SERVER_NAME, version: SERVER_VERSION });
-  registerBashTools(server);
-  registerFsTools(server);
-  registerNotesTools(server);
-  return server;
-}
-
 function readBody(req: IncomingMessage): Promise<string> {
   return new Promise((resolve, reject) => {
     const chunks: Buffer[] = [];
@@ -111,15 +110,24 @@ function log(msg: string): void {
 }
 
 async function runHttp(args: CliArgs): Promise<void> {
-  const transport = new StreamableHTTPServerTransport({
-    sessionIdGenerator: () => randomUUID(),
-  });
-  await buildServer().connect(transport);
-
+  // Modo **stateless**: se crea un transporte y servidor MCP frescos POR request
+  // y se destruyen al finalizar. No hay cookies ni `mcp-session-id`, por lo que:
+  //   - reenviar `initialize` (p.ej. un cors-proxy reintenta) NO lanza "Server
+  //     already initialized", ya que cada request parte de cero;
+  //   - `notifications/initialized` y `tools/list`/`tools/call` funcionan de forma
+  //     independiente.
+  // Es el modo recomendado para servidores MCP simples detrás de proxies/cors que
+  // no emiten notificaciones server-push. Los datos persisten porque el store de
+  // notas (`notes`) es un módulo (compartido entre requests).
   const httpServer = createServer(async (req, res) => {
     try {
       const body = await readBody(req);
+      const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined });
+      const server = buildServer();
+      await server.connect(transport);
       await transport.handleRequest(req, res, body ? JSON.parse(body) : undefined);
+      await transport.close();
+      await server.close();
     } catch (err) {
       if (!res.headersSent) {
         res.writeHead(500, { 'content-type': 'text/plain' });
@@ -129,7 +137,7 @@ async function runHttp(args: CliArgs): Promise<void> {
   });
 
   await new Promise<void>((resolve) => httpServer.listen(args.port, args.host, resolve));
-  log(`Streamable HTTP server on ${args.host}:${args.port} (POST /mcp)`);
+  log(`Streamable HTTP server (stateless) on ${args.host}:${args.port} (POST /mcp)`);
 }
 
 async function runSse(args: CliArgs): Promise<void> {
@@ -175,8 +183,11 @@ async function runStdio(): Promise<void> {
 
 async function main(): Promise<void> {
   const args = parseArgs(process.argv.slice(2));
+  // Anclar la carpeta de trabajo (la donde se lanza el comando) antes de arrancar.
+  process.chdir(WORK_DIR);
   log(`Starting MCP server...`);
   log(`Transport: ${args.transport}`);
+  log(`Working directory: ${WORK_DIR}`);
 
   switch (args.transport) {
     case 'stdio':

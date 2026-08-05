@@ -1,17 +1,19 @@
 import { readFile, writeFile, readdir, stat, mkdir } from 'node:fs/promises';
-import { isAbsolute, resolve, dirname } from 'node:path';
+import { resolve, dirname } from 'node:path';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
 
 const MAX_READ_BYTES = 200_000;
 
-export function registerFsTools(server: McpServer): void {
+export function registerFsTools(server: McpServer, opts?: { cwd?: string }): void {
+  const base = (opts?.cwd ?? process.cwd());
+  const abs = (path: string) => resolve(base, path);
   server.tool(
     'read_file',
     'Read the contents of a file at the given path.',
     { path: z.string().describe('Absolute or relative path to the file') },
     async ({ path }) => {
-      const full = resolve(path);
+      const full = abs(path);
       const stats = await stat(full);
       const content = await readFile(full, 'utf8');
       const text =
@@ -34,7 +36,7 @@ export function registerFsTools(server: McpServer): void {
       content: z.string().describe('Content to write'),
     },
     async ({ path, content }) => {
-      const full = resolve(path);
+      const full = abs(path);
       await mkdir(dirname(full), { recursive: true });
       await writeFile(full, content, 'utf8');
       return { content: [{ type: 'text', text: `Wrote ${content.length} bytes to ${full}` }] };
@@ -46,7 +48,7 @@ export function registerFsTools(server: McpServer): void {
     'List the contents of a directory with type and size.',
     { path: z.string().default('.').describe('Directory to list') },
     async ({ path }) => {
-      const full = resolve(path);
+      const full = abs(path);
       const entries = await readdir(full, { withFileTypes: true });
       const lines = await Promise.all(
         entries.map(async (entry) => {
@@ -69,7 +71,7 @@ export function registerFsTools(server: McpServer): void {
     'Return info about a path: whether it exists, type, and size.',
     { path: z.string().describe('Path to inspect') },
     async ({ path }) => {
-      const full = isAbsolute(path) ? path : resolve(path);
+      const full = abs(path);
       try {
         const s = await stat(full);
         const type = s.isDirectory() ? 'dir' : s.isFile() ? 'file' : 'other';

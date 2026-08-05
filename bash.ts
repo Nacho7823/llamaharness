@@ -52,13 +52,13 @@ export function runBash(
   });
 }
 
-export function registerBashTools(server: McpServer): void {
+export function registerBashTools(server: McpServer, opts?: { cwd?: string }): void {
   server.tool(
     'run_bash',
     'Run a shell command via bash. Returns stdout, stderr and the exit code.',
     {
       command: z.string().describe('The shell command to execute'),
-      cwd: z.string().optional().describe('Working directory for the command'),
+      cwd: z.string().optional().describe('Working directory for the command (defaults to the server working directory)'),
       timeoutMs: z
         .number()
         .int()
@@ -68,7 +68,7 @@ export function registerBashTools(server: McpServer): void {
         .describe('Timeout in milliseconds (default 30000)'),
     },
     async ({ command, cwd, timeoutMs }) => {
-      const result = await runBash(command, { cwd, timeoutMs });
+      const result = await runBash(command, { cwd: cwd ?? opts?.cwd, timeoutMs });
       const parts = [
         `exit_code: ${result.exitCode}`,
         result.timedOut ? 'status: timed out' : '',

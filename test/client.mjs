@@ -1,9 +1,4 @@
 #!/usr/bin/env node
-import { webcrypto } from 'node:crypto';
-if (typeof globalThis.crypto === 'undefined') {
-  Object.defineProperty(globalThis, 'crypto', { value: webcrypto, enumerable: true, configurable: true, writable: true });
-}
-
 import { argv, exit, stderr } from 'node:process';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
@@ -18,7 +13,7 @@ function getArg(name, def) {
 const transport = getArg('transport', 'stdio');
 const command = getArg('command', 'npx');
 const args = getArg('server', 'tsx llamaharness.ts --transport stdio').split(' ');
-const url = getArg('url', 'http://127.0.0.1:8000/mcp');
+const url = getArg('url', 'http://127.0.0.1:9908/mcp');
 const callIdx = argv.indexOf('--call');
 
 let tc;

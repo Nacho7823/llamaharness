@@ -89,6 +89,41 @@ try {
   }
   await client.callTool({ name: 'run_bash', arguments: { command: 'rm -f /tmp/_e2e_readfile.txt' } });
 
+  // write_file atómico + append
+  await client.callTool({ name: 'write_file', arguments: { path: '/tmp/_e2e_write.txt', content: 'line1\nline2\n' } });
+  const app = await client.callTool({ name: 'write_file', arguments: { path: '/tmp/_e2e_write.txt', content: 'line3\n', append: true } });
+  assert(app.content[0].text.includes('Appended'), 'write_file append=true funciona');
+
+  // edit_file: str_replace
+  await client.callTool({ name: 'write_file', arguments: { path: '/tmp/_e2e_edit.txt', content: 'apple\nbanana\nbanana\ncherry\n' } });
+  const amb = await client.callTool({ name: 'edit_file', arguments: { path: '/tmp/_e2e_edit.txt', old_string: 'banana', new_string: 'kiwi' } });
+  assert(/ambiguous/.test(amb.content[0].text), 'edit_file rechaza match ambigüo (2 ocurrencias)');
+
+  const okSingle = await client.callTool({ name: 'edit_file', arguments: { path: '/tmp/_e2e_edit.txt', old_string: 'apple', new_string: 'APPLE' } });
+  assert(okSingle.content[0].text.includes('Replaced 1 occurrence'), 'edit_file str_replace unico');
+
+  const ra = await client.callTool({ name: 'edit_file', arguments: { path: '/tmp/_e2e_edit.txt', old_string: 'banana', new_string: 'kiwi', replace_all: true } });
+  assert(ra.content[0].text.includes('Replaced 2 occurrence'), 'edit_file replace_all=true');
+
+  const dry = await client.callTool({ name: 'edit_file', arguments: { path: '/tmp/_e2e_edit.txt', old_string: 'cherry', new_string: 'CHERRY', dry_run: true } });
+  assert(dry.content[0].text.startsWith('DRY RUN'), 'edit_file dry_run no escribe');
+  const afterDry = await client.callTool({ name: 'read_file', arguments: { path: '/tmp/_e2e_edit.txt' } });
+  assert(!afterDry.content[0].text.includes('CHERRY'), 'dry_run no modifica el archivo');
+
+  const nf = await client.callTool({ name: 'edit_file', arguments: { path: '/tmp/_e2e_edit.txt', old_string: 'nope', new_string: 'x' } });
+  assert(/not found/.test(nf.content[0].text), 'edit_file error si old_string no existe');
+
+  // edit_lines
+  await client.callTool({ name: 'write_file', arguments: { path: '/tmp/_e2e_lines.txt', content: 'l1\nl2\nl3\nl4\n' } });
+  const el = await client.callTool({ name: 'edit_lines', arguments: { path: '/tmp/_e2e_lines.txt', start_line: 2, end_line: 3, new_text: 'X\nY\nZ' } });
+  assert(el.content[0].text.includes('Replaced lines 2..3'), 'edit_lines range válido');
+  const elAfter = await client.callTool({ name: 'read_file', arguments: { path: '/tmp/_e2e_lines.txt' } });
+  assert(elAfter.content[0].text.includes('l1\nX\nY\nZ\nl4'), 'edit_lines contenido correcto');
+  const elBad = await client.callTool({ name: 'edit_lines', arguments: { path: '/tmp/_e2e_lines.txt', start_line: 1, end_line: 99, new_text: 'q' } });
+  assert(/invalid line range/.test(elBad.content[0].text), 'edit_lines rechaza rango fuera de rango');
+
+  await client.callTool({ name: 'run_bash', arguments: { command: 'rm -f /tmp/_e2e_edit.txt /tmp/_e2e_write.txt /tmp/_e2e_lines.txt' } });
+
   await client.close();
   ok('cierre limpio');
 

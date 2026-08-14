@@ -3,15 +3,21 @@
 Chatbot TUI that drives a **llama.cpp** backend (via its OpenAI-compatible API) and gives the model access to the **MCP tools** from `llamaharness` (`bash`, `fs`, `notes`).
 
 ```
-tui.ts ──► harness.ts ──► llm.ts      (OpenAI-compatible client, pure HTTP)
-                    └──► llamaharness MCP server (spawned over stdio)
+tui.ts ──► harness.ts ──► llm.ts        (OpenAI-compatible client, pure HTTP)
+                     └──► llamaharness MCP server (Streamable HTTP, no coupling)
 ```
 
-The llama.cpp process is **not** managed here — it can be running on any machine. This project only talks to its HTTP endpoint.
+Neither the llama.cpp process nor the MCP server are managed here — both can be running on another machine. This project only talks to their HTTP endpoints.
 
 ## Requirements
 
-- The `llamaharness` MCP server built in the parent project: `pnpm build` at the repo root (produces `dist/llamaharness.js`).
+- A running `llamaharness` MCP server exposed over Streamable HTTP, e.g. from the `llamatools` package:
+
+  ```sh
+  node llamatools/dist/llamaharness.js --transport http --host 0.0.0.0 --port 9908
+  ```
+
+  (On another machine, substitute the host.)
 - An OpenAI-compatible endpoint, e.g. an already-running `llama-server`:
 
   ```sh
@@ -38,31 +44,24 @@ pnpm build && pnpm start
 
 All flags also work as environment variables.
 
-| Flag              | Env           | Default                          |
-| ----------------- | ------------- | -------------------------------- |
-| `--llm-base`      | `LLM_BASE`    | `http://localhost:8080/v1`       |
-| `--llm-model`     | `LLM_MODEL`   | `default`                        |
-| `--llm-key`       | `LLM_API_KEY` | —                                |
-| `--mcp-bin`       | `MCP_BIN`     | `../dist/llamaharness.js`        |
-| `--mcp-cwd`       | `MCP_CWD`     | current directory                |
-| `--node-bin`      | `NODE_BIN`    | current node                     |
-| `--max-iterations`| —             | `8`                              |
+| Flag              | Env           | Default                              |
+| ----------------- | ------------- | ------------------------------------ |
+| `--llm-base`      | `LLM_BASE`    | `http://localhost:8080/v1`           |
+| `--llm-model`     | `LLM_MODEL`   | `default`                            |
+| `--llm-key`       | `LLM_API_KEY` | —                                    |
+| `--mcp-url`       | `MCP_URL`     | `http://localhost:9908/mcp`          |
+| `--max-iterations`| —             | `8`                                  |
 
 ### Examples
 
-Connect to a llama.cpp server running on another computer:
+llama.cpp and the MCP server both running on another computer:
 
 ```sh
-pnpm dev -- --llm-base http://192.168.1.50:8080/v1 --llm-model llama
-```
-
-Constrain where the MCP tools operate:
-
-```sh
-pnpm dev -- --mcp-cwd ~/projects/some-repo
+pnpm dev -- --llm-base http://192.168.1.50:8080/v1 \
+             --mcp-url http://192.168.1.50:9908/mcp
 ```
 
 ## Usage
 
 - Type a message and press Enter. The model may call tools (shown as `⟳ using tool …`); results are fed back automatically until it produces a final answer, streamed live.
-- `Ctrl+C` quits and shuts down the spawned MCP server.
+- `Ctrl+C` quits. Nothing is spawned or left behind by this project.

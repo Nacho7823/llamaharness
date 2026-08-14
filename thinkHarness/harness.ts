@@ -1,8 +1,7 @@
-import { existsSync } from 'node:fs';
-import { fileURLToPath, pathToFileURL } from 'node:url';
+import { pathToFileURL } from 'node:url';
 
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
-import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
+import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
 
 import {
   createLlmClient,
@@ -17,9 +16,7 @@ export interface HarnessConfig {
   llmModel: string;
   llmApiKey?: string;
   llmTimeoutMs?: number;
-  mcpBin: string;
-  mcpCwd: string;
-  nodeBin: string;
+  mcpUrl: string;
   systemPrompt?: string;
   maxToolIterations: number;
 }
@@ -42,15 +39,14 @@ After you receive tool results, continue reasoning. Reply with a concise final a
 
 const USAGE = `Usage: thinkharness [options]
 
-Drives an OpenAI-compatible LLM backend (e.g. llama.cpp) and exposes MCP tools to it.
+Drives an OpenAI-compatible LLM backend (e.g. llama.cpp) and gives it access to the
+llamaharness MCP server over HTTP (which may be running on another machine).
 
 Options:
   --llm-base <url>      OpenAI-compatible base URL (default: $LLM_BASE or http://localhost:8080/v1)
   --llm-model <name>    model identifier sent to the server (default: $LLM_MODEL or "default")
   --llm-key <key>       optional bearer token (default: $LLM_API_KEY)
-  --mcp-bin <path>      MCP server entrypoint, the llamaharness server (default: $MCP_BIN or ../dist/llamaharness.js)
-  --mcp-cwd <dir>       working directory used by the MCP tools (default: $MCP_CWD or current directory)
-  --node-bin <path>     node binary used to spawn the MCP server (default: $NODE_BIN or current node)
+  --mcp-url <url>       MCP server HTTP endpoint (default: $MCP_URL or http://localhost:9908/mcp)
   --max-iterations <n>  max tool-call rounds per turn (default: 8)
   --help, -h            show this message`;
 
@@ -60,11 +56,7 @@ function parseArgs(argv: string[]): HarnessConfig {
     llmModel: process.env.LLM_MODEL ?? 'default',
     llmApiKey: process.env.LLM_API_KEY,
     llmTimeoutMs: 120_000,
-    mcpBin:
-      process.env.MCP_BIN ??
-      fileURLToPath(new URL('../dist/llamaharness.js', import.meta.url)),
-    mcpCwd: process.env.MCP_CWD ?? process.cwd(),
-    nodeBin: process.env.NODE_BIN ?? process.execPath,
+    mcpUrl: process.env.MCP_URL ?? 'http://localhost:9908/mcp',
     systemPrompt: process.env.SYSTEM_PROMPT,
     maxToolIterations: 8,
   };
@@ -83,14 +75,8 @@ function parseArgs(argv: string[]): HarnessConfig {
       case '--llm-key':
         config.llmApiKey = value();
         break;
-      case '--mcp-bin':
-        config.mcpBin = value();
-        break;
-      case '--mcp-cwd':
-        config.mcpCwd = value();
-        break;
-      case '--node-bin':
-        config.nodeBin = value();
+      case '--mcp-url':
+        config.mcpUrl = value();
         break;
       case '--max-iterations':
         config.maxToolIterations = Number(value()) || 8;
@@ -141,12 +127,6 @@ function formatToolResult(result: Record<string, unknown>): string {
 }
 
 export async function startHarness(config: HarnessConfig): Promise<HarnessAgent> {
-  if (!existsSync(config.mcpBin)) {
-    throw new Error(
-      `MCP server binary not found at ${config.mcpBin} — build the llamaharness project (pnpm build) or pass --mcp-bin.`,
-    );
-  }
-
   const llm = createLlmClient({
     baseUrl: config.llmBase,
     model: config.llmModel,
@@ -154,14 +134,11 @@ export async function startHarness(config: HarnessConfig): Promise<HarnessAgent>
     timeoutMs: config.llmTimeoutMs,
   });
 
-  const transport = new StdioClientTransport({
-    command: config.nodeBin,
-    args: [config.mcpBin, '--transport', 'stdio'],
-    cwd: config.mcpCwd,
-    env: process.env as Record<string, string>,
-    stderr: 'inherit',
-  });
-  const client = new Client({ name: 'thinkHarness', version: '0.1.0' });
+  const transport = new StreamableHTTPClientTransport(new URL(config.mcpUrl));
+  const client = new Client(
+    { name: 'thinkHarness', version: '0.1.0' },
+    { capabilities: {} },
+  );
   await client.connect(transport);
 
   const listed = await client.listTools();

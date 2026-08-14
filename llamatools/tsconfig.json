@@ -13,5 +13,5 @@
     "rootDir": ".",
     "declaration": false
   },
-  "include": ["*.ts"]
+  "include": ["*.ts", "llamatools/bash.ts", "llamatools/cli.ts", "llamatools/config.ts", "llamatools/fs.ts", "llamatools/http.ts", "llamatools/llamaharness.ts", "llamatools/notes.ts"]
 }

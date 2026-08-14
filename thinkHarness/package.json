@@ -1,0 +1,32 @@
+{
+  "name": "thinkharness",
+  "version": "0.1.0",
+  "description": "Chatbot TUI that drives a llama.cpp (OpenAI-compatible) backend with MCP tools from llamaharness",
+  "type": "module",
+  "private": true,
+  "main": "dist/harness.js",
+  "bin": {
+    "thinkharness": "dist/harness.js"
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "dev": "tsx harness.ts",
+    "start": "node dist/harness.js",
+    "build": "tsc",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.30.0",
+    "ink": "^5.1.2",
+    "ink-text-input": "^5.0.1",
+    "react": "^18.3.1"
+  },
+  "devDependencies": {
+    "@types/node": "^26.1.2",
+    "@types/react": "^18.3.12",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.2"
+  }
+}

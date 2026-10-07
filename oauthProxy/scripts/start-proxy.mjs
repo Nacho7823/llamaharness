@@ -26,7 +26,7 @@ async function main() {
   let stopped = false;
   const stop = signal => {
     stopped = true; process.exitCode = signal === 'SIGINT' ? 130 : 143;
-    try { if (process.platform === 'win32') child?.kill(); else if (child) process.kill(-child.pid, 'SIGTERM'); } catch {}
+    try { if (process.platform === 'win32') child?.kill(); else if (child) process.kill(-child.pid, 'SIGTERM'); } catch { }
   };
   const interrupt = () => stop('SIGINT'); const terminate = () => stop('SIGTERM');
   process.on('SIGINT', interrupt); process.on('SIGTERM', terminate);

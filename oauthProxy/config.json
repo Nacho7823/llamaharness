@@ -1,0 +1,16 @@
+{
+  "OAUTH_CLIENTS": [
+    {
+      "id": "chatgpt",
+      "redirectUri": "https://chatgpt.com/connector_platform_oauth_redirect"
+    },
+    {
+      "id": "grok",
+      "redirectUri": "https://grok.com/connectors-oauth-exchange-code/"
+    },
+    {
+      "id": "chatgpt",
+      "redirectUri": "https://grok.com/connectors-oauth-exchange-code/"
+    }
+  ]
+}

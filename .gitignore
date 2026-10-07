@@ -1,0 +1,8 @@
+node_modulse
+node_modules
+package-lock.json
+dist
+pnpm-lock.yaml
+pnpm-workspace.yaml
+.opencode
+.swarm

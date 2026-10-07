@@ -1,0 +1,33 @@
+{
+  "name": "llamaharness-oauth-proxy",
+  "version": "0.1.0",
+  "description": "OAuth proxy local (emisor auto-contenido, sin IdP externo) para llamaharness MCP",
+  "type": "module",
+  "bin": {
+    "llamaharness-oauth-proxy": "dist/index.js"
+  },
+  "main": "dist/index.js",
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "dev": "tsx src/index.ts",
+    "start": "node dist/index.js",
+    "build": "tsc",
+    "typecheck": "tsc --noEmit",
+    "test": "node --test test/password.mjs test/start-tmole.mjs test/separate-tunnel.mjs && node test/e2e-local.mjs",
+    "password:hash": "pnpm build && node scripts/hash-password.mjs",
+    "tunnel": "node scripts/start-tmole.mjs",
+    "tunnel:open": "node scripts/open-tunnel.mjs",
+    "dev:tunnel": "node scripts/start-proxy.mjs",
+    "dev:public": "node scripts/start-proxy.mjs"
+  },
+  "dependencies": {
+    "jose": "^5.9.6"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.2",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.2"
+  }
+}

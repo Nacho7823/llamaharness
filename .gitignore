@@ -6,3 +6,6 @@ pnpm-lock.yaml
 pnpm-workspace.yaml
 .opencode
 .swarm
+
+pnpm-lock.yaml
+connector/pnpm-workspace.yaml

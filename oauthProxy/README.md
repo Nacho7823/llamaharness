@@ -43,61 +43,19 @@ Microsoft. Copiá la URL HTTPS y arrancá el proxy desde `oauthProxy`:
 pnpm dev:public https://TU_URL.devtunnels.ms
 ```
 
-Este comando compila y arranca solo la app, con una contraseña aleatoria impresa
+Este comando compila y arranca solo la app, con la contraseña guardada impresa
 en la terminal. Usá la URL pública seguida de `/mcp` en ChatGPT. Para aplicar
 cambios, detené la app y repetí el mismo comando; mantené el reenvío de VS Code
 activo. El backend sigue ejecutándose por separado en loopback, puerto 9908.
 `PROXY_PORT` permite elegir otro puerto si también cambiás el reenvío.
 
-La URL del argumento tiene prioridad sobre `PROXY_PUBLIC_URL` y `.tunnel.json`.
-También podés pasarla como variable de entorno. Este arranque no usa Tunnelmole.
+La URL del argumento tiene prioridad sobre `PROXY_PUBLIC_URL`.
+También podés pasarla como variable de entorno.
 Referencia: [reenvío de puertos de VS Code](https://code.visualstudio.com/docs/debugtest/port-forwarding).
 
-## Arranque con Tunnelmole
+## Clientes OAuth
 
-Para mantener la dirección mientras reiniciás la app, usá dos terminales:
-
-```sh
-# Terminal 1: solo abre el túnel; dejala ejecutándose.
-pnpm tunnel:open
-
-# Terminal 2: arranca solo el proxy, con una contraseña aleatoria.
-pnpm dev:tunnel
-```
-
-El túnel guarda su URL y puerto en `.tunnel.json`, sin contraseñas. Podés detener
-la segunda terminal con Ctrl+C y volver a ejecutar `pnpm dev:tunnel`: usa la misma
-dirección y genera otra contraseña. Mantené el backend ejecutándose por separado.
-El túnel puede abrirse antes de la app. Si cerrás el túnel y abrís otro, la URL
-puede cambiar; estos comandos no reservan un dominio permanente.
-
-### Arranque conjunto
-
-Con el backend ejecutándose, detené el proxy anterior y ejecutá:
-
-```sh
-pnpm tunnel
-```
-
-El [script](scripts/start-tmole.mjs) compila el proxy, genera una contraseña aleatoria,
-abre un servidor temporal en el puerto 9910 para que `pnpx tmole 9910` pueda
-comprobarlo, y lo reemplaza por el proxy con la URL HTTPS anunciada. El servidor
-temporal responde únicamente “iniciando” (HTTP 503). Imprime la
-contraseña y las direcciones de login y MCP. No hace falta configurar el hash ni
-instalar Tunnelmole globalmente; se requieren `pnpm` y `pnpx`.
-
-Cada arranque genera una contraseña nueva y usa su hash para el login, aunque ya
-exista `OAUTH_PASSWORD_HASH` en la terminal. No guarda la contraseña en un archivo.
-Con `Ctrl+C` cierra el proxy y el túnel; no inicia ni detiene el backend.
-Puede ejecutarse desde cualquier directorio con
-`node /ruta/al/proyecto/oauthProxy/scripts/start-tmole.mjs`.
-
-`PROXY_PORT` cambia el puerto y `TMOLE_TIMEOUT_SEC` el tiempo máximo de espera
-para recibir la URL (45 segundos por defecto). La interfaz permanece en loopback.
-La URL puede cambiar al volver a abrir el túnel.
-
-Para una conexión nueva con ChatGPT, basta con `pnpm tunnel`: el cliente por defecto
-es `chatgpt` y su callback es `https://chatgpt.com/connector_platform_oauth_redirect`.
+Para conectar ChatGPT, el cliente por defecto es `chatgpt` y su callback es `https://chatgpt.com/connector_platform_oauth_redirect`.
 El proxy anuncia identificación del emisor (RFC 9207) e incluye `iss` en las
 respuestas de autorización, tanto exitosas como de error, para habilitar ese
 callback estable. Véase la [documentación oficial de OpenAI](https://developers.openai.com/plugins/build/auth#redirect-url).
@@ -106,15 +64,31 @@ Si una conexión existente todavía muestra un callback particular, podés crear
 una conexión nueva o conservarla configurando su dirección exacta:
 
 ```sh
-OAUTH_CLIENT_ID=chatgpt OAUTH_REDIRECT_URI='https://chatgpt.com/connector/oauth/TU_CALLBACK' pnpm tunnel
+OAUTH_CLIENT_ID=chatgpt OAUTH_REDIRECT_URI='https://chatgpt.com/connector/oauth/TU_CALLBACK' \
+pnpm dev:public https://TU_URL.devtunnels.ms
 ```
 
 En ChatGPT ingresá `chatgpt` como ID de cliente. El proxy usa PKCE sin secreto de
 cliente; la contraseña impresa se escribe en la página de login del proxy.
-Solo se admite el callback exacto configurado, asociado a ese ID. `OAUTH_REDIRECT_URI`
+Solo se admiten los callbacks exactos configurados, asociados a su ID. `OAUTH_REDIRECT_URI`
 permite reemplazar el valor por defecto para otra conexión o cliente.
 
-Referencia: [Tunnelmole](https://github.com/robbie-cahill/tunnelmole-client).
+`config.json` guarda los clientes de ChatGPT y Grok y se carga automáticamente en
+todos los arranques. Incluye el ID `grok` y también permite el retorno de Grok con
+el ID `chatgpt`, para conservar las conexiones ya creadas. Podés editar sus pares
+`id` y `redirectUri` y reiniciar la app. No hace falta exportar `OAUTH_CLIENTS`.
+
+La variable `OAUTH_CLIENTS`, si se define, tiene prioridad sobre la lista del archivo:
+un array JSON de pares `id` y `redirectUri` que se agregan al cliente predeterminado.
+Cada URL debe coincidir exactamente, incluida la barra final. Por ejemplo, si
+en Grok ingresaste `chatgpt` como ID:
+
+```sh
+OAUTH_CLIENTS='[{"id":"chatgpt","redirectUri":"https://grok.com/connectors-oauth-exchange-code/"}]' \
+pnpm dev:public https://tu-url-publica
+```
+
+También podés usar el ID `grok`, cambiándolo tanto en este JSON como en Grok.
 
 ## Variables
 
@@ -124,13 +98,16 @@ Referencia: [Tunnelmole](https://github.com/robbie-cahill/tunnelmole-client).
 | `PROXY_PORT` | `9910` | Puerto del proxy. |
 | `PROXY_PUBLIC_URL` | `http://HOST:PORT` | Override del `iss` y base de discovery. |
 | `UPSTREAM_URL` | `http://127.0.0.1:9908` | **Debe ser loopback** o el proceso termina. |
-| `OAUTH_PASSWORD_HASH` | obligatorio | Hash scrypt generado con `pnpm password:hash`. Sin hash válido el proxy no arranca. |
+| `OAUTH_PASSWORD_HASH` | contraseña guardada | Hash scrypt opcional para arranque directo. Los launchers usan la contraseña de `data.json`. |
+| `OAUTH_DATA_FILE` | `oauthProxy/data.json` | Archivo privado de contraseña, sesiones y tokens de renovación. |
 | `OAUTH_REDIRECT_URI` | `https://chatgpt.com/connector_platform_oauth_redirect` | URL HTTPS exacta de retorno del cliente remoto. |
 | `OAUTH_CLIENT_ID` | `chatgpt` | ID asociado al callback externo; `local-browser` está reservado. |
+| `OAUTH_CLIENTS` | lista de `config.json` | Clientes adicionales en JSON; la variable reemplaza la lista del archivo. |
+| `OAUTH_CONFIG_FILE` | `oauthProxy/config.json` | Ruta alternativa al archivo de clientes. |
 | `OAUTH_AUDIENCE` | `llamaharness-local` | `aud` esperado en los JWT. |
 | `ACCESS_TTL_SEC` | `300` | Vida del access token. |
 | `SESSION_TTL_SEC` | `43200` | Vida de la cookie `lh_session`. |
-| `SESSION_SECRET` | sin efecto en la sesión | Las sesiones son opacas y se guardan en memoria; fijarlo no las conserva al reiniciar. |
+| `SESSION_SECRET` | sin efecto en la sesión | Compatibilidad; las sesiones son IDs opacos guardados en `data.json`. |
 | `KEYS_DIR` | `./.keys` | Llave `RS256` persistida (`private.pem`, `0600`, gitignore). O `DEV_PRIVATE_KEY_PEM` con el PEM. |
 
 ## Endpoints
@@ -155,7 +132,7 @@ apuntando al resource metadata (spec MCP). Al reenviar se stripean
 → contraseña → sesión → botón *Autorizar acceso* → `code` → `POST /token` (con `code_verifier`) →
 `Bearer` en cada `POST /mcp`. `redirect_uri` permitidas: mismo origen del proxy
 o `http://127.0.0.1|localhost|::1:*` (clientes nativos). El cliente remoto configurado
-solo puede usar su `OAUTH_REDIRECT_URI` exacta.
+solo puede usar los callbacks exactos registrados para su ID.
 
 **Navegador (para `EventSource`, que no manda headers):**
 `GET /oauth/login` → contraseña → autoriza → `/oauth/callback` rota cookie `lh_session`
@@ -164,7 +141,8 @@ solo puede usar su `OAUTH_REDIRECT_URI` exacta.
 ## Acceso con contraseña
 
 La contraseña identifica a un único usuario (`local-user`), sin proveedor externo.
-El proxy solo almacena su hash scrypt con sal aleatoria. La sesión usa una cookie
+El login verifica un hash scrypt con sal aleatoria. Para volver a imprimir la misma
+contraseña, el archivo privado también conserva su valor original. La sesión usa una cookie
 `HttpOnly`, `SameSite=Lax` y `Secure` cuando la URL pública es HTTPS. Los formularios
 protegen el login, la aprobación y el logout con tokens CSRF. Iniciar sesión ya
 habilita el acceso por cookie al MCP; el consentimiento permite emitir un código para el cliente.
@@ -176,7 +154,15 @@ la conexión desde ChatGPT; los formularios anteriores pierden su contexto.
 Se admiten cinco intentos de contraseña por dirección de conexión en quince minutos.
 Una contraseña válida reinicia ese contador; tras alcanzar el límite hay que esperar.
 El proxy no confía en `X-Forwarded-For`: detrás de un túnel o reverse proxy, varios
-usuarios pueden compartir el mismo contador. El límite y las sesiones están en memoria.
+usuarios pueden compartir el mismo contador. El límite de intentos está en memoria.
+
+Las sesiones y los tokens de renovación se guardan al modificarse y se restauran
+tras reiniciar, separados por URL pública. Conservan sus vencimientos: doce horas
+para sesiones y siete días para renovación. Los códigos y formularios de login
+siguen siendo temporales. `data.json` tiene permisos `0600` en Linux y está excluido
+de Git. Un archivo inválido detiene el arranque; no se reemplaza automáticamente.
+Usá un único proxy por archivo de datos y conservá también `.keys` para mantener
+la firma de los tokens.
 
 HTTP solo se permite si tanto la URL anunciada como la interfaz de escucha son loopback.
 Para acceso remoto, configurá `PROXY_PUBLIC_URL=https://tu-dominio` y terminá TLS en

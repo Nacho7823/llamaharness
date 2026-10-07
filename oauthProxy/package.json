@@ -15,11 +15,8 @@
     "start": "node dist/index.js",
     "build": "tsc",
     "typecheck": "tsc --noEmit",
-    "test": "node --test test/password.mjs test/start-tmole.mjs test/separate-tunnel.mjs && node test/e2e-local.mjs",
+    "test": "node --test test/password.mjs test/start-proxy.mjs test/persistence.mjs && node test/e2e-local.mjs",
     "password:hash": "pnpm build && node scripts/hash-password.mjs",
-    "tunnel": "node scripts/start-tmole.mjs",
-    "tunnel:open": "node scripts/open-tunnel.mjs",
-    "dev:tunnel": "node scripts/start-proxy.mjs",
     "dev:public": "node scripts/start-proxy.mjs"
   },
   "dependencies": {

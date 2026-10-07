@@ -460,6 +460,7 @@ async function main() {
     PROXY_PORT: String(PROXY_PORT),
     UPSTREAM_URL,
     KEYS_DIR,
+    OAUTH_DATA_FILE: join(KEYS_DIR, 'data.json'),
     SESSION_SECRET: 'e2e-test-secret',
     OAUTH_PASSWORD_HASH: await hashPassword(PASSWORD),
     OAUTH_CLIENT_ID: 'chatgpt',

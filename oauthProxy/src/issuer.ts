@@ -57,8 +57,9 @@ export function isAllowedRedirectUri(cfg: ProxyConfig, uri: string, clientId?: s
   }
   if (u.protocol !== 'http:' && u.protocol !== 'https:') return false;
   if (u.username || u.password || u.hash) return false;
-  if (cfg.externalClient && clientId === cfg.externalClient.id) {
-    return uri === cfg.externalClient.redirectUri;
+  const clients = cfg.externalClients ?? (cfg.externalClient ? [cfg.externalClient] : []);
+  if (clients.some(client => client.id === clientId)) {
+    return clients.some(client => client.id === clientId && uri === client.redirectUri);
   }
   const issuer = new URL(cfg.publicUrl);
   if (u.origin === issuer.origin) return true;
@@ -124,7 +125,7 @@ export function handleAuthorize(req: IncomingMessage, res: ServerResponse, cfg: 
   if (responseType !== 'code') return fail('unsupported_response_type', 'only response_type=code is supported');
   if (!clientId) return fail('invalid_request', 'client_id is required');
   if (!redirectUri || !isAllowedRedirectUri(cfg, redirectUri, clientId))
-    return fail('invalid_request', 'redirect_uri is not allowed for this client; configure the exact OAUTH_REDIRECT_URI and OAUTH_CLIENT_ID');
+    return fail('invalid_request', 'redirect_uri is not allowed for this client; add the exact id and redirectUri to OAUTH_CLIENTS');
   if (!challenge) return fail('invalid_request', 'code_challenge (PKCE S256) is required');
   if (method !== 'S256' && method !== 'PLAIN')
     return fail('invalid_request', 'code_challenge_method must be S256');

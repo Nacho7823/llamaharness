@@ -1,6 +1,8 @@
 // config.ts — Configuración 100% local. Sin IdP externo, sin fallback a Google.
 // El proxy es emisor (iss) y verificador a la vez. El `iss` es siempre el propio proxy.
 import { randomBytes } from 'node:crypto';
+import { readFileSync } from 'node:fs';
+import { dirname, join, resolve } from 'node:path';
 import { validPasswordHash } from './password.js';
 
 // Callback estable publicado por OpenAI para emisores compatibles con RFC 9207.
@@ -18,6 +20,8 @@ export interface ProxyConfig {
   passwordHash: string;
   /** Cliente remoto preconfigurado, con una URI de retorno exacta. */
   externalClient?: { id: string; redirectUri: string };
+  /** Clientes adicionales; permite varios callbacks exactos para el mismo ID. */
+  externalClients?: { id: string; redirectUri: string }[];
   accessTtlSec: number;
   codeTtlSec: number;
   sessionTtlSec: number;
@@ -50,6 +54,23 @@ function normalizePublicUrl(host: string, port: number, override?: string): stri
 }
 
 export function loadConfig(keysDirFallback: string): ProxyConfig {
+  const configPath = resolve(process.env.OAUTH_CONFIG_FILE?.trim() || join(dirname(keysDirFallback), 'config.json'));
+  let fileClients: unknown = [];
+  let text: string | undefined;
+  try { text = readFileSync(configPath, 'utf8'); }
+  catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== 'ENOENT' || process.env.OAUTH_CONFIG_FILE?.trim()) {
+      throw new Error(`No se pudo leer config.json: ${configPath}`);
+    }
+  }
+  if (text !== undefined) {
+    try {
+      const settings = JSON.parse(text);
+      if (!settings || typeof settings !== 'object' || Array.isArray(settings) ||
+          Object.keys(settings).some(key => key !== 'OAUTH_CLIENTS')) throw new Error();
+      fileClients = settings.OAUTH_CLIENTS ?? [];
+    } catch { throw new Error(`config.json inválido: ${configPath}. Debe contener OAUTH_CLIENTS.`); }
+  }
   const proxyHost = process.env.PROXY_HOST?.trim() || '127.0.0.1';
   const proxyPort = num(process.env.PROXY_PORT, 9910);
   const publicUrl = normalizePublicUrl(proxyHost, proxyPort, process.env.PROXY_PUBLIC_URL);
@@ -88,11 +109,32 @@ export function loadConfig(keysDirFallback: string): ProxyConfig {
     if (id === 'local-browser') throw new Error('OAUTH_CLIENT_ID local-browser está reservado para el login del navegador.');
     externalClient = { id, redirectUri };
   }
+  const externalClients = externalClient ? [externalClient] : [];
+  {
+    let entries: unknown = fileClients;
+    try { if (process.env.OAUTH_CLIENTS?.trim()) entries = JSON.parse(process.env.OAUTH_CLIENTS); }
+    catch { throw new Error('OAUTH_CLIENTS debe ser un array JSON de {id, redirectUri}.'); }
+    if (!Array.isArray(entries)) throw new Error('OAUTH_CLIENTS debe ser un array JSON de {id, redirectUri}.');
+    for (const entry of entries) {
+      if (!entry || typeof entry.id !== 'string' || !entry.id.trim() ||
+          entry.id.trim() === 'local-browser' || typeof entry.redirectUri !== 'string') {
+        throw new Error('OAUTH_CLIENTS requiere un ID no vacío y no reservado, y redirectUri HTTPS.');
+      }
+      const uri = entry.redirectUri.trim();
+      let callback: URL;
+      try { callback = new URL(uri); }
+      catch { throw new Error('OAUTH_CLIENTS requiere redirectUri HTTPS completa.'); }
+      if (callback.protocol !== 'https:' || callback.username || callback.password || callback.hash) {
+        throw new Error('OAUTH_CLIENTS requiere redirectUri HTTPS, sin credenciales ni fragmento.');
+      }
+      externalClients.push({ id: entry.id.trim(), redirectUri: uri });
+    }
+  }
 
   let sessionSecret = process.env.SESSION_SECRET?.trim() || '';
   let ephemeral = false;
   if (!sessionSecret) {
-    // Solo dev: secreto efímero (las sesiones se invalidan al reiniciar). En prod fijar SESSION_SECRET.
+    // Compatibilidad: las sesiones son IDs opacos persistidos, no dependen de este secreto.
     sessionSecret = randomBytes(32).toString('hex');
     ephemeral = true;
   }
@@ -106,6 +148,7 @@ export function loadConfig(keysDirFallback: string): ProxyConfig {
     subject: 'local-user',
     passwordHash,
     externalClient,
+    externalClients,
     accessTtlSec: num(process.env.ACCESS_TTL_SEC, 300),
     codeTtlSec: 300,
     sessionTtlSec: num(process.env.SESSION_TTL_SEC, 12 * 3600),

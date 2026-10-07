@@ -36,7 +36,7 @@ Los valores en mayúsculas son marcadores. No debe suponerse que ChatGPT utiliza
 
 El proxy valida la solicitud y pide la contraseña si no hay una sesión activa. Después muestra «Autorizar acceso». Al aprobar, crea un código que caduca a los cinco minutos y redirige a la `redirect_uri` con `code` y `state`. La aprobación exige sesión y un token CSRF; una petición directa no puede saltarse el login.
 
-El cliente predefinido es `chatgpt`, con retorno a `https://chatgpt.com/connector_platform_oauth_redirect`. El proxy anuncia soporte de RFC 9207 y devuelve `iss` con su emisor exacto en las respuestas de autorización, incluidos los errores. Esto permite a ChatGPT elegir el callback estable para una conexión nueva. Si una conexión existente conserva un callback particular, `OAUTH_REDIRECT_URI` permite configurarlo; `OAUTH_CLIENT_ID` cambia el ID. Cada cliente remoto solo puede regresar a su dirección exacta. Los clientes locales conservan el retorno al propio proxy o a HTTP de loopback.
+El cliente predefinido es `chatgpt`, con retorno a `https://chatgpt.com/connector_platform_oauth_redirect`. El proxy anuncia soporte de RFC 9207 y devuelve `iss` con su emisor exacto en las respuestas de autorización, incluidos los errores. Esto permite a ChatGPT elegir el callback estable para una conexión nueva. Si una conexión existente conserva un callback particular, `OAUTH_REDIRECT_URI` permite configurarlo; `OAUTH_CLIENT_ID` cambia el ID. Para agregar Grok u otros clientes sin reemplazar ChatGPT, `OAUTH_CLIENTS` admite un array JSON de pares `id` y `redirectUri`. Cada cliente remoto solo puede regresar a las direcciones exactas registradas para su ID. Los clientes locales conservan el retorno al propio proxy o a HTTP de loopback.
 
 ## El canje y el acceso al MCP
 
@@ -59,7 +59,7 @@ El cliente presenta `Authorization: Bearer <token>` en sus peticiones a `/mcp`. 
 
 El cliente puede renovar el acceso enviando a `/token` un formulario con `grant_type=refresh_token`, `refresh_token` y `client_id`. El refresh token dura siete días y se reutiliza, sin rotación.
 
-Los códigos, refresh tokens y sesiones se guardan en memoria y desaparecen al reiniciar. Fijar `SESSION_SECRET` no los hace persistentes. La llave de firma sí se conserva en disco: si se mantiene junto con la configuración, los JWT emitidos pueden seguir siendo válidos hasta caducar.
+Las sesiones, los refresh tokens y la contraseña generada se conservan en `oauthProxy/data.json`. Reiniciar mantiene las conexiones si la URL pública y la llave de `.keys` siguen siendo las mismas, hasta que las credenciales caduquen. Los códigos y formularios de login permanecen en memoria: una autorización incompleta debe iniciarse de nuevo. `SESSION_SECRET` no controla esta persistencia.
 
 El flujo de `/oauth/login` crea una cookie `lh_session` para el navegador, útil para conexiones como `EventSource`. Cerrar esa sesión elimina su registro, pero no revoca los JWT ni los refresh tokens.
 

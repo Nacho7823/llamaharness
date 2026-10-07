@@ -39,7 +39,7 @@ function invalidLogin(res: ServerResponse, reason: string): void {
   sendHtml(res, 403, `<!doctype html><html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Volver a conectar</title></head>` +
     `<body style="font-family:system-ui,sans-serif;max-width:34rem;margin:4rem auto;padding:0 1rem"><h1>Volvé a iniciar la conexión</h1><p>${esc(reason)}</p>` +
     `<p>Si estabas conectando ChatGPT, cerrá esta pestaña y pulsá Conectar otra vez en ChatGPT. Usá la dirección HTTPS actual del túnel y permití las cookies de esa página.</p>` +
-    `<p>Si reiniciaste el proxy, usá la nueva contraseña que imprime la terminal.</p></body></html>`);
+    `<p>Usá la contraseña de login que imprime la terminal.</p></body></html>`);
 }
 
 // El destino se genera en /authorize y se conserva en el servidor, no en el formulario.

@@ -21,6 +21,8 @@ import {
 import { handleSignin } from './signin.js';
 import { handleProxy } from './proxy.js';
 import { sendJson } from './httpUtils.js';
+import { dataFile, getLoginCredentials } from './data.js';
+import { initializeStore } from './store.js';
 
 const SERVER = 'llamaharness-oauth-proxy';
 
@@ -33,6 +35,12 @@ function packageRoot(): string {
   return join(dir, '..');
 }
 
+const storage = dataFile(packageRoot());
+if (!process.env.OAUTH_PASSWORD_HASH?.trim()) {
+  const credentials = await getLoginCredentials(storage);
+  process.env.OAUTH_PASSWORD_HASH = credentials.hash;
+  console.log(`Contraseña de login: ${credentials.password}`);
+}
 const cfg = loadConfig(join(packageRoot(), '.keys'));
 
 function pathOf(req: IncomingMessage): string {
@@ -130,15 +138,14 @@ async function route(req: IncomingMessage, res: ServerResponse): Promise<void> {
 
 async function main(): Promise<void> {
   await getKeys(cfg.keysDir); // genera la llave en el primer arranque si falta
+  initializeStore(storage, cfg.publicUrl);
   const server = createServer(route);
   await new Promise<void>((resolve) => server.listen(cfg.proxyPort, cfg.proxyHost, resolve));
   log(`listening on ${cfg.proxyHost}:${cfg.proxyPort} (issuer ${cfg.publicUrl})`);
   log(`upstream ${cfg.upstreamUrl} (llamaharness SIN api-key, solo loopback)`);
   log(`login browser: ${cfg.publicUrl}/oauth/login`);
   log(`callback (registrado en el flujo browser): ${callbackUrl(cfg)}`);
-  if (cfg.sessionSecretEphemeral) {
-    log('Las sesiones se guardan en memoria y se pierden al reiniciar.');
-  }
+  log(`Sesiones y tokens de renovación guardados en ${storage}`);
 }
 
 main().catch((err) => {

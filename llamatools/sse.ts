@@ -4,12 +4,20 @@ import { SSEServerTransport } from '@modelcontextprotocol/sdk/server/sse.js';
 import { buildServer } from './server.js';
 import { log } from './config.js';
 import type { CliArgs } from './cli.js';
+import { extractQueryKey, isAuthorized, resolveApiKey, sendUnauthorized } from './auth.js';
 
 export async function runSse(args: CliArgs, cwd: string): Promise<void> {
   const sessions = new Map<string, SSEServerTransport>();
+  const expectedApiKey = resolveApiKey(args);
 
   const httpServer = createServer(async (req, res) => {
     const url = new URL(req.url ?? '/', `http://${args.host}:${args.port}`);
+    // Auth en ambos endpoints. Query ?apiKey= como fallback porque
+    // EventSource en navegadores no permite headers custom.
+    if (!isAuthorized(req, expectedApiKey, extractQueryKey(url))) {
+      sendUnauthorized(res);
+      return;
+    }
     try {
       if (req.method === 'GET' && url.pathname === '/sse') {
         const transport = new SSEServerTransport('/messages', res);
@@ -38,4 +46,5 @@ export async function runSse(args: CliArgs, cwd: string): Promise<void> {
 
   await new Promise<void>((resolve) => httpServer.listen(args.port, args.host, resolve));
   log(`SSE server on ${args.host}:${args.port} (GET /sse)`);
+  log(`Auth: ${expectedApiKey ? 'enabled (Authorization: Bearer / x-api-key / ?apiKey=)' : 'disabled (no API key configured)'}`);
 }

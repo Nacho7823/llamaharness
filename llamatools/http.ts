@@ -4,6 +4,7 @@ import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/
 import { buildServer } from './server.js';
 import { log } from './config.js';
 import type { CliArgs } from './cli.js';
+import { isAuthorized, resolveApiKey, sendUnauthorized } from './auth.js';
 
 function readBody(req: IncomingMessage): Promise<string> {
   return new Promise((resolve, reject) => {
@@ -24,7 +25,13 @@ export async function runHttp(args: CliArgs, cwd: string): Promise<void> {
   // Es el modo recomendado para servidores MCP simples detrás de proxies/cors que
   // no emiten notificaciones server-push. Los datos persisten porque el store de
   // notas (`notes`) es un módulo (compartido entre requests).
+  const expectedApiKey = resolveApiKey(args);
   const httpServer = createServer(async (req, res) => {
+    // Auth primero: no leer body ni instanciar MCP si la key es inválida.
+    if (!isAuthorized(req, expectedApiKey)) {
+      sendUnauthorized(res);
+      return;
+    }
     try {
       const body = await readBody(req);
       const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined });
@@ -43,4 +50,5 @@ export async function runHttp(args: CliArgs, cwd: string): Promise<void> {
 
   await new Promise<void>((resolve) => httpServer.listen(args.port, args.host, resolve));
   log(`Streamable HTTP server (stateless) on ${args.host}:${args.port} (POST /mcp)`);
+  log(`Auth: ${expectedApiKey ? 'enabled (Authorization: Bearer / x-api-key)' : 'disabled (no API key configured)'}`);
 }

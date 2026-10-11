@@ -21,7 +21,6 @@
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.30.0",
-    "llamaharness": "link:llamaharness",
     "zod": "^3.24.1"
   },
   "devDependencies": {

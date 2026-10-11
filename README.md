@@ -14,16 +14,30 @@ Genera el tunel y expone oauthproxy
 ## Install
 ```
 # install llamaharness
-cd llamatools
-pnpm i
-pnpm build
-pnpm link ./llamaharness
+cd llamaharness
+npm install
+npm link
+```
 
+El binario queda en el `PATH` (`which llamaharness`) y funciona en
+cualquier carpeta. El servidor expone las
+herramientas en la carpeta desde donde se lo inicia.
+
+```
+# actualizar tras cada cambio
+cd llamaharness
+npm link
+
+# desinstalar
+npm unlink -g llamaharness
+```
+
+```
 # install connector
 cd connector
-pnpm i
-pnpm build
-pnpm start
+npm i
+npm build
+npm start
 ```
 
 ### En chatgpt
@@ -60,7 +74,7 @@ Esta carpeta es donde trabajara el agente
 
 ### Leer imágenes
 
-`llamatools` expone `read_image` para que el agente inspeccione imágenes locales:
+`llamaharness` expone `read_image` para que el agente inspeccione imágenes locales:
 
 ```json
 { "name": "read_image", "arguments": { "path": "docs/image.png" } }
@@ -72,7 +86,7 @@ la firma del archivo y devuelve un bloque MCP `image` con los bytes en base64,
 junto con la ruta y el tamaño. El cliente y el modelo deben admitir contenido
 de imagen de herramientas MCP. `read_file` sigue siendo para archivos de texto.
 
-Después de actualizar, ejecutá `pnpm build` en `llamatools` y reiniciá el servidor
+Después de actualizar, ejecutá `npm run build` en `llamaharness` y reiniciá el servidor
 para que aparezca la nueva herramienta.
 
 

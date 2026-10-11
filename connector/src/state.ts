@@ -5,6 +5,8 @@ import { errorCode } from './errors.js';
 export interface AuthState {
   accessToken: string;
   expiresAt?: number;
+  refreshToken?: string;
+  refreshExpiresAt?: number;
 }
 
 export interface TunnelReference {

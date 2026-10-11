@@ -4,7 +4,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { errorCode, errorStatus } from './errors.js';
 import { readState, writeState } from './state.js';
-import { cachedToken, deviceLogin } from './auth.js';
+import { createTokenProvider } from './auth.js';
 import { createManagement, prepareTunnel, createHost, publicOrigin, cancellationToken } from './tunnel.js';
 import { assertPortAvailable, startProxy, verifyPublicProxy, resolveProxyEntry } from './proxy.js';
 
@@ -42,32 +42,25 @@ async function main() {
   try {
     const statePath = join(ROOT, 'data.json');
     const state = await readState(statePath);
-    async function getToken(): Promise<string> {
-      let token = cachedToken(state);
-      if (!token) {
-        state.auth = await deviceLogin({ signal: controller.signal });
-        await writeState(statePath, state);
-        token = state.auth.accessToken;
-      }
-      return token;
-    }
+    const tokens = createTokenProvider({ state, save: current => writeState(statePath, current), signal: controller.signal });
+    const getToken = tokens.getToken;
     await getToken();
+    tokens.startAutoRefresh();
     controller.signal.throwIfAborted();
     console.log('[connector] Preparando el túnel público…');
     const management = createManagement(getToken);
+    const saveTunnel = async (reference: NonNullable<typeof state.tunnel>) => {
+      state.tunnel = reference;
+      await writeState(statePath, state);
+    };
     let tunnel;
     try {
-      tunnel = await prepareTunnel(management, state.tunnel, port, async reference => {
-        state.tunnel = reference;
-        await writeState(statePath, state);
-      }, cancellation);
+      tunnel = await prepareTunnel(management, state.tunnel, port, saveTunnel, cancellation);
     } catch (error) {
-      if (errorStatus(error) === 401) {
-        delete state.auth;
-        await writeState(statePath, state);
-        throw new Error('La autorización de GitHub venció. Ejecutá pnpm start para identificarte de nuevo.');
-      }
-      throw error;
+      if (errorStatus(error) !== 401) throw error;
+      // Intentar renovar un token revocado antes de volver a pedir login.
+      await getToken(true);
+      tunnel = await prepareTunnel(management, state.tunnel, port, saveTunnel, cancellation);
     }
     controller.signal.throwIfAborted();
     host = createHost(management);

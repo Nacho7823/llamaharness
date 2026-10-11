@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createServer } from 'node:net';
 import { readState, writeState } from '../dist/state.js';
-import { cachedToken, deviceLogin } from '../dist/auth.js';
+import { cachedToken, deviceLogin, refreshAuth, createTokenProvider } from '../dist/auth.js';
 import { prepareTunnel, publicOrigin, cancellationToken } from '../dist/tunnel.js';
 import { assertPortAvailable, startProxy, verifyPublicProxy, resolveProxyEntry } from '../dist/proxy.js';
 
@@ -46,7 +46,7 @@ test('device flow respeta espera y slow_down; no imprime el token ni device_code
   const responses = [
     { device_code: 'secret-device', user_code: 'PUBLIC-CODE', verification_uri: 'https://github.com/login/device', expires_in: 900, interval: 5 },
     { error: 'authorization_pending' }, { error: 'slow_down' },
-    { access_token: 'secret-access', expires_in: 3600 },
+    { access_token: 'secret-access', expires_in: 3600, refresh_token: 'secret-refresh', refresh_token_expires_in: 15897600 },
   ];
   const auth = await deviceLogin({
     now: () => 1000,
@@ -56,10 +56,13 @@ test('device flow respeta espera y slow_down; no imprime el token ni device_code
   });
   assert.deepEqual(intervals, [5000, 5000, 10000]);
   assert.equal(auth.expiresAt, 3_601_000);
+  assert.equal(auth.refreshToken, 'secret-refresh');
+  assert.equal(auth.refreshExpiresAt, 15_897_601_000);
+  assert.equal(requests[0].fields.get('scope'), 'offline_access');
   assert.equal(requests[1].fields.get('grant_type'), 'urn:ietf:params:oauth:grant-type:device_code');
   assert.ok(requests[0].fields.get('client_id'));
   assert.match(logs.join(''), /PUBLIC-CODE/);
-  assert.doesNotMatch(logs.join(''), /secret-access|secret-device/);
+  assert.doesNotMatch(logs.join(''), /secret-access|secret-device|secret-refresh/);
 });
 
 test('rechazo y cancelación de GitHub terminan la espera', async () => {
@@ -216,4 +219,143 @@ test('ejecuta la entrada del paquete real y reutiliza su contraseña sin scripts
   assert.deepEqual(persisted.login, initial.login);
   await restarted.stop();
   await assertPortAvailable(port);
+});
+
+
+const oldAuth = () => ({ accessToken: 'old-access', expiresAt: 1000, refreshToken: 'old-refresh', refreshExpiresAt: 9_000_000 });
+const renewed = () => ({ access_token: 'new-access', expires_in: 28800, refresh_token: 'new-refresh', refresh_token_expires_in: 15897600 });
+
+test('renueva y persiste ambos tokens; al reiniciar reutiliza el acceso sin login', async t => {
+  const root = await temporary(t);
+  const path = join(root, 'data.json');
+  const state = { version: 1, auth: oldAuth(), tunnel: { tunnelId: 'same', clusterId: 'brs' }, publicUrl: 'https://same.devtunnels.ms' };
+  let calls = 0;
+  const provider = createTokenProvider({
+    state, save: current => writeState(path, current), env: {}, now: () => 2000,
+    login: () => assert.fail('No debe pedir login'),
+    fetcher: async (url, options) => {
+      calls++;
+      assert.equal(options.body.get('grant_type'), 'refresh_token');
+      assert.equal(options.body.get('refresh_token'), 'old-refresh');
+      assert.equal(options.body.has('client_secret'), false);
+      return reply(renewed());
+    },
+  });
+  t.after(() => provider.dispose());
+  assert.equal(await provider.getToken(), 'new-access');
+  const persisted = await readState(path);
+  assert.equal(persisted.auth.refreshToken, 'new-refresh');
+  assert.equal(persisted.auth.expiresAt, 28_802_000);
+  assert.equal(persisted.auth.refreshExpiresAt, 15_897_602_000);
+  assert.deepEqual(persisted.tunnel, state.tunnel);
+  assert.equal(persisted.publicUrl, state.publicUrl);
+  const restart = createTokenProvider({ state: persisted, env: {}, now: () => 3000, save: async () => {}, login: () => assert.fail('No debe pedir login'), fetcher: () => assert.fail('No debe renovar todavía') });
+  t.after(() => restart.dispose());
+  assert.equal(await restart.getToken(), 'new-access');
+  assert.equal(calls, 1);
+});
+
+test('solicitudes simultáneas intercambian el refresh token una sola vez', async t => {
+  let requests = 0;
+  const provider = createTokenProvider({
+    state: { version: 1, auth: oldAuth() }, env: {}, now: () => 2000, save: async () => {},
+    fetcher: async () => { requests++; await new Promise(resolve => setImmediate(resolve)); return reply(renewed()); },
+    login: () => assert.fail('No debe pedir login'),
+  });
+  t.after(() => provider.dispose());
+  assert.deepEqual(await Promise.all([provider.getToken(), provider.getToken(), provider.getToken(true)]), ['new-access', 'new-access', 'new-access']);
+  assert.equal(requests, 1);
+});
+
+test('fallas transitorias no eliminan el refresh token ni piden login', async t => {
+  const state = { version: 1, auth: oldAuth() };
+  let failed = true;
+  const provider = createTokenProvider({ state, env: {}, now: () => 2000, save: () => assert.fail('No debe guardar cambios durante el fallo'),
+    fetcher: async () => {
+      if (failed) return { ok: false, status: 503, json: async () => ({}) };
+      return reply(renewed());
+    }, login: () => assert.fail('No debe pedir login') });
+  t.after(() => provider.dispose());
+  await assert.rejects(provider.getToken(), /HTTP 503/);
+  assert.deepEqual(state.auth, oldAuth());
+});
+
+test('un token de renovación rechazado requiere identificación y guarda la autorización nueva', async t => {
+  const state = { version: 1, auth: oldAuth() };
+  let logins = 0, saves = 0;
+  const provider = createTokenProvider({ state, env: {}, now: () => 2000,
+    save: async () => { saves++; },
+    fetcher: async () => ({ ok: false, status: 400, json: async () => ({ error: 'bad_refresh_token' }) }),
+    login: async () => { logins++; return { accessToken: 'login-access', refreshToken: 'login-refresh', expiresAt: 99_000_000 }; },
+  });
+  t.after(() => provider.dispose());
+  assert.equal(await provider.getToken(), 'login-access');
+  assert.equal(state.auth.refreshToken, 'login-refresh');
+  assert.equal(logins, 1);
+  assert.equal(saves, 2);
+});
+
+test('autorización anterior sin refresh token o con refresh vencido pide login', async t => {
+  for (const auth of [{ accessToken: 'legacy', expiresAt: 1000 }, { ...oldAuth(), refreshExpiresAt: 1000 }]) {
+    let logins = 0;
+    const provider = createTokenProvider({ state: { version: 1, auth }, env: {}, now: () => 2000,
+      save: async () => {}, fetcher: () => assert.fail('No debe utilizar un refresh vencido'),
+      login: async () => { logins++; return { accessToken: 'login', refreshToken: 'new' }; },
+    });
+    t.after(() => provider.dispose());
+    assert.equal(await provider.getToken(), 'login');
+    assert.equal(logins, 1);
+  }
+});
+
+test('si falla el guardado tras la rotación, reintenta guardar sin intercambiar otra vez', async t => {
+  let writes = 0, requests = 0;
+  const provider = createTokenProvider({ state: { version: 1, auth: oldAuth() }, env: {}, now: () => 2000,
+    save: async () => { if (++writes === 1) throw Error('Disco lleno'); },
+    fetcher: async () => { requests++; return reply(renewed()); },
+    login: () => assert.fail('No debe pedir login'),
+  });
+  t.after(() => provider.dispose());
+  await assert.rejects(provider.getToken(), /Disco lleno/);
+  assert.equal(await provider.getToken(), 'new-access');
+  assert.equal(requests, 1);
+  assert.equal(writes, 2);
+});
+
+test('un 401 permite forzar renovación aunque el access token todavía no haya vencido', async t => {
+  const provider = createTokenProvider({ state: { version: 1, auth: { ...oldAuth(), expiresAt: 200_000 } }, env: {}, now: () => 2000,
+    save: async () => {}, fetcher: async () => reply(renewed()), login: () => assert.fail('No debe pedir login'),
+  });
+  t.after(() => provider.dispose());
+  assert.equal(await provider.getToken(true), 'new-access');
+});
+
+test('el token proporcionado por entorno no se reemplaza ni solicita login', async t => {
+  const provider = createTokenProvider({ state: { version: 1, auth: oldAuth() }, env: { DEV_TUNNELS_GITHUB_TOKEN: 'external-token' },
+    save: () => assert.fail('No debe guardar el token externo'), fetcher: () => assert.fail('No debe renovar'), login: () => assert.fail('No debe pedir login'),
+  });
+  t.after(() => provider.dispose());
+  assert.equal(await provider.getToken(true), 'external-token');
+});
+
+test('renueva antes de vencer durante la ejecución y detiene el temporizador al cancelar', async t => {
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  const controller = new AbortController();
+  let now = 0, requests = 0;
+  const state = { version: 1, auth: { ...oldAuth(), expiresAt: 66_000 } };
+  const provider = createTokenProvider({ state, env: {}, signal: controller.signal, now: () => now,
+    save: async () => {}, fetcher: async () => { requests++; return reply(renewed()); }, login: () => assert.fail('No debe pedir login'),
+  });
+  t.after(() => provider.dispose());
+  provider.startAutoRefresh();
+  now = 6001;
+  t.mock.timers.tick(6001);
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(requests, 1);
+  assert.equal(state.auth.refreshToken, 'new-refresh');
+  controller.abort();
+  now += 28_800_000;
+  t.mock.timers.tick(28_800_000);
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(requests, 1);
 });

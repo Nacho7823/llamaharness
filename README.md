@@ -58,5 +58,21 @@ llamaharness --host 127.0.0.1
 
 Esta carpeta es donde trabajara el agente
 
+### Leer imágenes
+
+`llamatools` expone `read_image` para que el agente inspeccione imágenes locales:
+
+```json
+{ "name": "read_image", "arguments": { "path": "docs/image.png" } }
+```
+
+Acepta rutas absolutas o relativas a la carpeta donde se inició el servidor,
+formatos PNG, JPEG, GIF y WebP, y archivos de hasta 10 MiB. Detecta el MIME por
+la firma del archivo y devuelve un bloque MCP `image` con los bytes en base64,
+junto con la ruta y el tamaño. El cliente y el modelo deben admitir contenido
+de imagen de herramientas MCP. `read_file` sigue siendo para archivos de texto.
+
+Después de actualizar, ejecutá `pnpm build` en `llamatools` y reiniciá el servidor
+para que aparezca la nueva herramienta.
 
 

@@ -58,9 +58,12 @@ try {
   const tools = await client.listTools();
   const names = tools.tools.map((t) => t.name).sort();
   assert(
-    ['create_note', 'list_notes', 'read_note', 'read_file', 'write_file', 'list_dir', 'path_info', 'run_bash'].every((n) => names.includes(n)),
+    ['create_note', 'list_notes', 'read_note', 'read_file', 'read_image', 'write_file', 'list_dir', 'path_info', 'run_bash'].every((n) => names.includes(n)),
     'todas las tools registradas',
   );
+
+  const image = await client.callTool({ name: 'read_image', arguments: { path: '../docs/image.png' } });
+  assert(!image.isError && image.content.some(block => block.type === 'image' && block.mimeType === 'image/png' && block.data.length > 0), 'read_image devuelve una imagen MCP');
 
   const bash = await client.callTool({ name: 'run_bash', arguments: { command: 'echo e2e-ok' } });
   assert(bash.content[0].text.includes('e2e-ok'), 'run_bash ejecuta y devuelve stdout');
